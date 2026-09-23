@@ -1,6 +1,117 @@
 import {runScan} from './pipeline.js';
 import {api} from './api.js';
+
 export default {
- async fetch(request,env){return api(env,request)},
- async scheduled(event,env,ctx){ctx.waitUntil(runScan(env).then(x=>env.CACHE.put('current_setups',JSON.stringify(x))));}
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (url.pathname === '/') {
+      return new Response(
+        `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trade Command Center</title>
+<style>
+:root{--bg:#050507;--panel:#0d0d12;--text:#fff;--muted:#8f8f9f;--bull:#9b5cff;--bear:#3d7dff;--border:#252531}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,sans-serif}
+.wrap{max-width:1100px;margin:auto;padding:22px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.brand{font-size:22px;font-weight:800}
+.controls{display:flex;gap:8px}
+.btn{background:#17171f;border:1px solid var(--border);color:white;border-radius:10px;padding:9px 14px;cursor:pointer}
+.status{color:var(--muted);margin:12px 0 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px}
+.bull{border-left:3px solid var(--bull)}
+.bear{border-left:3px solid var(--bear)}
+.ticker{font-size:19px;font-weight:800}
+.bias{font-size:12px;font-weight:800;letter-spacing:.08em}
+.bull .bias{color:var(--bull)}
+.bear .bias{color:var(--bear)}
+.setup{margin:8px 0;font-weight:700}
+.row{display:flex;justify-content:space-between;gap:12px;margin:7px 0}
+.label{color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:60px 20px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top">
+<div class="brand">Trade Command Center</div>
+<div class="controls">
+<button class="btn" id="scan">Scan</button>
+<button class="btn" id="refresh">Refresh</button>
+</div>
+</div>
+<div class="status" id="status">Connecting…</div>
+<div class="grid" id="grid"></div>
+</div>
+
+<script>
+const API='';
+const $=s=>document.querySelector(s);
+
+function money(x){
+  return Number.isFinite(Number(x))?'$'+Number(x).toFixed(2):'—'
+}
+
+function card(x){
+  const cls=x.bias==='bullish'?'bull':'bear';
+  const lev=Object.entries(x.keyLevels||{})
+    .filter(([,v])=>v!=null)
+    .map(([k,v])=>\`${k} \${money(v)}\`)
+    .join(' · ');
+
+  return \`<article class="card \${cls}">
+    <div class="ticker">\${x.symbol} <span class="bias">— \${x.bias.toUpperCase()}</span></div>
+    <div class="setup">\${x.setup}</div>
+    <div class="row"><span class="label">Entry</span><span>\${x.entry||'—'}</span></div>
+    <div class="row"><span class="label">Levels</span><span>\${lev||'—'}</span></div>
+    <div class="row"><span class="label">Strike</span><span>\${x.bestStrike??'—'} / \${x.secondStrike??'—'}</span></div>
+    <div class="row"><span class="label">Expiration</span><span>\${x.expiration||'—'}</span></div>
+    <div class="row"><span class="label">TPs</span><span>\${(x.TPs||[]).map(money).join(' · ')||'—'}</span></div>
+    <div class="row"><span class="label">Status</span><span>\${x.status}</span></div>
+  </article>\`
+}
+
+async function load(){
+  try{
+    const [s,d]=await Promise.all([
+      fetch(API+'/api/status').then(r=>r.json()),
+      fetch(API+'/api/setups').then(r=>r.json())
+    ]);
+
+    $('#status').textContent=\`Last scan: \${s.lastScan?.at||'—'} · \${d.length} setups · Queue: \${s.queueSize}\`;
+    $('#grid').innerHTML=d.length
+      ?d.map(card).join('')
+      :'<div class="empty">No actionable setups right now.</div>';
+  }catch(e){
+    $('#status').textContent='Data unavailable — check Worker configuration.'
+  }
+}
+
+$('#scan').onclick=load;
+$('#refresh').onclick=load;
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>`,
+        { headers: { 'content-type': 'text/html;charset=UTF-8' } }
+      );
+    }
+
+    return api(env, request);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      runScan(env).then(x =>
+        env.CACHE.put('current_setups', JSON.stringify(x))
+      )
+    );
+  }
 };
